@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import unittest
 
-from stalkr import Detection, FrameDetections, LightweightTracker, StalkrTracker, TrackerConfig, TrackingPipeline
+from stalkr import (
+    Detection,
+    FrameDetections,
+    LightweightTracker,
+    RFDETRDetectionAdapter,
+    StalkrTracker,
+    TrackerConfig,
+    TrackingPipeline,
+)
 
 
 class LightweightTrackerTests(unittest.TestCase):
@@ -221,6 +229,25 @@ class LightweightTrackerTests(unittest.TestCase):
         self.assertEqual(len(tracks), 1)
         self.assertEqual(tracks[0].frame_index, 4)
         self.assertEqual(tracks[0].timestamp, 1.25)
+
+    def test_rfdetr_adapter_converts_supervision_like_output(self) -> None:
+        class DummyDetections:
+            xyxy = [[1.0, 2.0, 11.0, 12.0]]
+            confidence = [0.9]
+            class_id = [3]
+
+        detections = RFDETRDetectionAdapter().parse(
+            DummyDetections(),
+            frame_index=7,
+            timestamp=0.25,
+        )
+
+        self.assertEqual(detections.frame_index, 7)
+        self.assertEqual(detections.timestamp, 0.25)
+        self.assertEqual(len(detections.items), 1)
+        self.assertEqual(detections.items[0].box, (1.0, 2.0, 11.0, 12.0))
+        self.assertAlmostEqual(detections.items[0].score, 0.9, places=6)
+        self.assertEqual(detections.items[0].class_id, 3)
 
     def test_stalkr_tracker_alias(self) -> None:
         tracker = StalkrTracker()

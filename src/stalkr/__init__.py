@@ -1,3 +1,4 @@
+from .adapters import RFDETRDetectionAdapter
 from .interfaces import DetectionAdapter, Tracker
 from .pipeline import TrackingPipeline
 from .tracker import LightweightTracker, TrackerConfig
@@ -10,6 +11,7 @@ __all__ = [
     "DetectionAdapter",
     "FrameDetections",
     "LightweightTracker",
+    "RFDETRDetectionAdapter",
     "StalkrTracker",
     "TrackingPipeline",
     "Track",
