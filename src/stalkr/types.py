@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from typing import Any, Literal
+
+if TYPE_CHECKING:
+    import numpy as np
 
 TrackState = Literal["tracked", "lost", "removed"]
 Box = tuple[float, float, float, float]
@@ -23,6 +27,20 @@ class FrameDetections:
     frame_index: int | None = None
     timestamp: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    _boxes_cache: "np.ndarray | None" = field(default=None, init=False, repr=False)
+
+    def boxes_array(self) -> "np.ndarray":
+        if self._boxes_cache is None:
+            try:
+                import numpy as np
+            except ModuleNotFoundError as exc:
+                raise ModuleNotFoundError(
+                    "boxes_array() requires numpy to be installed."
+                ) from exc
+            self._boxes_cache = np.asarray([item.box for item in self.items], dtype=np.float32)
+            if self._boxes_cache.size == 0:
+                self._boxes_cache = self._boxes_cache.reshape(0, 4)
+        return self._boxes_cache
 
 
 @dataclass(slots=True)

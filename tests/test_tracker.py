@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from stalkr import Detection, FrameDetections, LightweightTracker, TrackerConfig, TrackingPipeline
+from stalkr import Detection, FrameDetections, LightweightTracker, StalkrTracker, TrackerConfig, TrackingPipeline
 
 
 class LightweightTrackerTests(unittest.TestCase):
@@ -29,6 +29,7 @@ class LightweightTrackerTests(unittest.TestCase):
         self.assertEqual(tracks[0].state, "tracked")
         self.assertEqual(tracks[0].hits, 2)
         self.assertGreaterEqual(len(tracks[0].path), 2)
+        self.assertNotEqual(tracks[0].velocity, (0.0, 0.0, 0.0, 0.0))
 
     def test_second_pass_keeps_track_alive_with_lower_score_detection(self) -> None:
         tracker = LightweightTracker(
@@ -149,6 +150,44 @@ class LightweightTrackerTests(unittest.TestCase):
         self.assertEqual([track.track_id for track in tracks], [1, 2])
         self.assertLess(tracks[0].box[0], tracks[1].box[0])
 
+    def test_distance_gate_blocks_far_detection_match(self) -> None:
+        tracker = LightweightTracker(
+            TrackerConfig(
+                min_hits=1,
+                match_iou_threshold=0.0,
+                distance_gate_multiplier=1.0,
+            )
+        )
+        tracker.update(
+            FrameDetections(
+                frame_index=0,
+                items=[Detection(box=(0, 0, 10, 10), score=0.95, class_id=1)],
+            )
+        )
+
+        tracks = tracker.update(
+            FrameDetections(
+                frame_index=1,
+                items=[Detection(box=(100, 100, 110, 110), score=0.95, class_id=1)],
+            )
+        )
+        self.assertEqual(len(tracks), 1)
+        self.assertEqual(tracks[0].track_id, 2)
+
+    def test_boxes_array_is_cached(self) -> None:
+        detections = FrameDetections(
+            items=[
+                Detection(box=(0, 0, 10, 10), score=0.9),
+                Detection(box=(10, 10, 20, 20), score=0.8),
+            ]
+        )
+        try:
+            boxes = detections.boxes_array()
+        except ModuleNotFoundError:
+            self.skipTest("numpy is not installed")
+        self.assertEqual(boxes.shape, (2, 4))
+        self.assertIs(boxes, detections.boxes_array())
+
     def test_tracking_pipeline_uses_adapter_output(self) -> None:
         class DummyDetector:
             def predict(self, frame: object) -> object:
@@ -182,6 +221,10 @@ class LightweightTrackerTests(unittest.TestCase):
         self.assertEqual(len(tracks), 1)
         self.assertEqual(tracks[0].frame_index, 4)
         self.assertEqual(tracks[0].timestamp, 1.25)
+
+    def test_stalkr_tracker_alias(self) -> None:
+        tracker = StalkrTracker()
+        self.assertIsInstance(tracker, LightweightTracker)
 
 
 if __name__ == "__main__":

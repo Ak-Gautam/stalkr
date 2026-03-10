@@ -65,7 +65,7 @@ detections = FrameDetections(
 tracks = tracker.update(detections)
 
 for track in tracks:
-    print(track.track_id, track.box, track.path)
+    print(track.track_id, track.box, track.velocity, track.path)
 ```
 
 ## Common workflows
@@ -88,7 +88,7 @@ for frame_index, model_output in enumerate(video_outputs):
     tracks = tracker.update(detections)
 
     for track in tracks:
-        print(track.track_id, track.box, track.state)
+        print(track.track_id, track.box, track.velocity, track.state)
 ```
 
 ### Draw boxes and track trails with OpenCV
@@ -125,7 +125,8 @@ for track in tracks:
 ```python
 line_x = 320
 counted_ids = set()
-count = 0
+left_to_right = 0
+right_to_left = 0
 
 for track in tracks:
     if track.track_id in counted_ids or len(track.path) < 2:
@@ -134,10 +135,12 @@ for track in tracks:
     previous_x = track.path[-2][0]
     current_x = track.path[-1][0]
 
-    crossed_line = previous_x < line_x <= current_x
-    if crossed_line:
+    if previous_x < line_x <= current_x:
         counted_ids.add(track.track_id)
-        count += 1
+        left_to_right += 1
+    elif previous_x > line_x >= current_x:
+        counted_ids.add(track.track_id)
+        right_to_left += 1
 ```
 
 ## Integration

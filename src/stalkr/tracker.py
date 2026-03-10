@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .assignment import hungarian
+from .assignment import solve_assignment
 from .kalman import KalmanFilter
 from .types import Detection, FrameDetections, Track
 from .utils import box_center, clamp_box, cosine_similarity, iou
@@ -10,10 +10,12 @@ from .utils import box_center, clamp_box, cosine_similarity, iou
 
 @dataclass(slots=True)
 class TrackerConfig:
+    assignment_backend: str = "auto"
     high_confidence_threshold: float = 0.5
     low_confidence_threshold: float = 0.1
     match_iou_threshold: float = 0.3
     second_match_iou_threshold: float = 0.2
+    distance_gate_multiplier: float = 2.0
     appearance_weight: float = 0.2
     use_appearance: bool = True
     class_aware: bool = True
@@ -134,7 +136,10 @@ class LightweightTracker:
         matched_detections = set()
         matches: list[tuple[int, int]] = []
 
-        for row_index, detection_index in hungarian(cost_matrix):
+        for row_index, detection_index in solve_assignment(
+            cost_matrix,
+            backend=self.config.assignment_backend,
+        ):
             if cost_matrix[row_index][detection_index] >= large_cost:
                 continue
             matched_rows.add(row_index)
@@ -154,7 +159,10 @@ class LightweightTracker:
     def _similarity(self, track: Track, detection: Detection) -> float:
         if self.config.class_aware and track.class_id is not None and detection.class_id is not None:
             if track.class_id != detection.class_id:
-                return 0.0
+                return -1.0
+
+        if not self._passes_distance_gate(track, detection):
+            return -1.0
 
         overlap = iou(track.box, detection.box)
         if not self.config.use_appearance:
@@ -253,3 +261,14 @@ class LightweightTracker:
     def _sync_track_from_filter(self, track: Track) -> None:
         track.box = self._kalman.box_from_mean(track.mean)
         track.velocity = self._kalman.velocity_from_mean(track.mean)
+
+    def _passes_distance_gate(self, track: Track, detection: Detection) -> bool:
+        track_cx, track_cy = box_center(track.box)
+        detection_cx, detection_cy = box_center(detection.box)
+        distance_x = detection_cx - track_cx
+        distance_y = detection_cy - track_cy
+        squared_distance = distance_x * distance_x + distance_y * distance_y
+
+        x1, y1, x2, y2 = track.box
+        gate_radius = max(abs(x2 - x1), abs(y2 - y1), 1.0) * self.config.distance_gate_multiplier
+        return squared_distance <= gate_radius * gate_radius

@@ -1,6 +1,24 @@
 from __future__ import annotations
 
 
+def solve_assignment(
+    cost_matrix: list[list[float]],
+    *,
+    backend: str = "auto",
+) -> list[tuple[int, int]]:
+    if backend not in {"auto", "hungarian", "lapjv"}:
+        raise ValueError(f"unsupported assignment backend: {backend}")
+
+    if backend in {"auto", "lapjv"}:
+        lapjv_matches = _solve_with_lapjv(cost_matrix)
+        if lapjv_matches is not None:
+            return lapjv_matches
+        if backend == "lapjv":
+            raise ModuleNotFoundError("lapjv backend requested but lapjv is not installed.")
+
+    return hungarian(cost_matrix)
+
+
 def hungarian(cost_matrix: list[list[float]]) -> list[tuple[int, int]]:
     """
     Solve the rectangular linear assignment problem using the Hungarian method.
@@ -88,3 +106,32 @@ def hungarian(cost_matrix: list[list[float]]) -> list[tuple[int, int]]:
     assignments.sort()
     return assignments
 
+
+def _solve_with_lapjv(cost_matrix: list[list[float]]) -> list[tuple[int, int]] | None:
+    try:
+        import numpy as np
+        from lapjv import lapjv
+    except ModuleNotFoundError:
+        return None
+
+    if not cost_matrix or not cost_matrix[0]:
+        return []
+
+    cost_array = np.asarray(cost_matrix, dtype=np.float64)
+    row_count, column_count = cost_array.shape
+
+    if row_count != column_count:
+        size = max(row_count, column_count)
+        pad_value = float(cost_array.max()) + 1.0 if cost_array.size else 1.0
+        padded = np.full((size, size), pad_value, dtype=np.float64)
+        padded[:row_count, :column_count] = cost_array
+        cost_array = padded
+
+    _, row_assignment, _ = lapjv(cost_array)
+    matches: list[tuple[int, int]] = []
+    for row_index, column_index in enumerate(row_assignment.tolist()):
+        if row_index >= row_count or column_index < 0 or column_index >= column_count:
+            continue
+        matches.append((row_index, column_index))
+    matches.sort()
+    return matches
