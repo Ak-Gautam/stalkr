@@ -15,10 +15,6 @@ if str(REPO_ROOT / "src") not in sys.path:
 if str(RFDETR_REPO / "src") not in sys.path:
     sys.path.insert(0, str(RFDETR_REPO / "src"))
 
-import cv2
-import numpy as np
-from rfdetr import RFDETRLarge
-
 from stalkr import RFDETRDetectionAdapter, TrackerConfig, TrackingPipeline
 from stalkr.tracker import LightweightTracker
 
@@ -58,11 +54,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=32,
         help="How many center points to keep per track trail.",
-    )
-    parser.add_argument(
-        "--no-transcode",
-        action="store_true",
-        help="Skip ffmpeg H.264 transcoding and keep the intermediate OpenCV MP4 output.",
     )
     return parser.parse_args()
 
@@ -121,12 +112,16 @@ def transcode_to_platform_mp4(source_path: Path, output_path: Path) -> None:
 
 
 def color_for_track(track_id: int) -> tuple[int, int, int]:
+    import numpy as np
+
     rng = np.random.default_rng(track_id)
     color = rng.integers(64, 256, size=3)
     return int(color[0]), int(color[1]), int(color[2])
 
 
-def draw_track(frame: np.ndarray, track, class_name: str | None) -> np.ndarray:
+def draw_track(frame, track, class_name: str | None):
+    import cv2
+
     x1, y1, x2, y2 = (int(value) for value in track.box)
     color = color_for_track(track.track_id)
     label = f"id={track.track_id}"
@@ -169,11 +164,14 @@ def main() -> int:
     if not args.weights.exists():
         raise FileNotFoundError(f"RF-DETR Large weights not found: {args.weights}")
 
+    import cv2
+    from rfdetr import RFDETRLarge
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    raw_output_path = intermediate_output_path(args.output) if not args.no_transcode else args.output
+    raw_output_path = intermediate_output_path(args.output)
     if raw_output_path.exists():
         raw_output_path.unlink()
-    if not args.no_transcode and args.output.exists():
+    if args.output.exists():
         args.output.unlink()
 
     model = RFDETRLarge(device=args.device, pretrain_weights=str(args.weights))
@@ -235,9 +233,8 @@ def main() -> int:
         capture.release()
         writer.release()
 
-    if not args.no_transcode:
-        transcode_to_platform_mp4(raw_output_path, args.output)
-        raw_output_path.unlink(missing_ok=True)
+    transcode_to_platform_mp4(raw_output_path, args.output)
+    raw_output_path.unlink(missing_ok=True)
 
     print(f"Saved annotated video to {args.output}")
     return 0
