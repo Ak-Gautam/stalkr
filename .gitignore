@@ -1,0 +1,37 @@
+# Virtual environments
+.venv/
+.env
+.env.*
+
+# Package manager and build caches
+.uv-cache/
+.hatch/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test and coverage outputs
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Type checker and lint caches
+.mypy_cache/
+.pyre/
+.ruff_cache/
+.pytype/
+.hypothesis/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# IDE and OS files
+.DS_Store
+.idea/
