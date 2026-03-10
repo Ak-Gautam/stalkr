@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -57,7 +59,65 @@ def parse_args() -> argparse.Namespace:
         default=32,
         help="How many center points to keep per track trail.",
     )
+    parser.add_argument(
+        "--no-transcode",
+        action="store_true",
+        help="Skip ffmpeg H.264 transcoding and keep the intermediate OpenCV MP4 output.",
+    )
     return parser.parse_args()
+
+
+def intermediate_output_path(output_path: Path) -> Path:
+    return output_path.with_name(f"{output_path.stem}.intermediate{output_path.suffix}")
+
+
+def transcode_to_platform_mp4(source_path: Path, output_path: Path) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError(
+            "ffmpeg is required for the default H.264 export path. "
+            "Install ffmpeg or rerun with --no-transcode."
+        )
+
+    commands = [
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(source_path),
+            "-an",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ],
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(source_path),
+            "-an",
+            "-c:v",
+            "h264_videotoolbox",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ],
+    ]
+
+    errors: list[str] = []
+    for command in commands:
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode == 0:
+            return
+        errors.append(result.stderr.strip() or "ffmpeg failed without stderr output")
+
+    raise RuntimeError("\n\n".join(errors))
 
 
 def color_for_track(track_id: int) -> tuple[int, int, int]:
@@ -110,6 +170,11 @@ def main() -> int:
         raise FileNotFoundError(f"RF-DETR Large weights not found: {args.weights}")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    raw_output_path = intermediate_output_path(args.output) if not args.no_transcode else args.output
+    if raw_output_path.exists():
+        raw_output_path.unlink()
+    if not args.no_transcode and args.output.exists():
+        args.output.unlink()
 
     model = RFDETRLarge(device=args.device, pretrain_weights=str(args.weights))
     pipeline = TrackingPipeline(
@@ -136,14 +201,14 @@ def main() -> int:
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     writer = cv2.VideoWriter(
-        str(args.output),
+        str(raw_output_path),
         cv2.VideoWriter_fourcc(*"mp4v"),
         fps,
         (width, height),
     )
     if not writer.isOpened():
         capture.release()
-        raise RuntimeError(f"Could not open output video for writing: {args.output}")
+        raise RuntimeError(f"Could not open output video for writing: {raw_output_path}")
 
     frame_index = 0
     try:
@@ -169,6 +234,10 @@ def main() -> int:
     finally:
         capture.release()
         writer.release()
+
+    if not args.no_transcode:
+        transcode_to_platform_mp4(raw_output_path, args.output)
+        raw_output_path.unlink(missing_ok=True)
 
     print(f"Saved annotated video to {args.output}")
     return 0
